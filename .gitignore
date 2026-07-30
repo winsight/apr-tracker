@@ -18,3 +18,6 @@ Thumbs.db
 
 # Python 参考代码（不纳入 Go 项目版本管理）
 parser/
+
+# 参考文档（非项目代码）
+go_prompt.md
