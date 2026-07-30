@@ -48,6 +48,10 @@ func (s *Server) Start(addr string) error {
 	mux.HandleFunc("/api/image", s.handleImage)
 
 	// 静态文件服务（前端 HTML/JS/CSS）
+	// /libs/ → internal/ui/templates/libs/
+	libsFS := http.FileServer(http.Dir(resolveTemplateDir("libs")))
+	mux.Handle("/libs/", http.StripPrefix("/libs", libsFS))
+	// / → index.html
 	mux.HandleFunc("/", s.handleStatic)
 
 	s.srv = &http.Server{
@@ -289,26 +293,41 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, absPath)
 }
 
-// handleStatic 提供前端静态页面
+// handleStatic 提供前端静态页面（仅响应 / 路径）
 func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
-	// 查找 index.html：优先当前目录，再找可执行文件同目录
-	paths := []string{
-		"internal/ui/templates/index.html",
-		"ui/templates/index.html",
-		"templates/index.html",
-		"index.html",
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
 	}
 
-	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
-			http.ServeFile(w, r, p)
-			return
-		}
+	indexPath := resolveTemplateDir("index.html")
+	if _, err := os.Stat(indexPath); err == nil {
+		http.ServeFile(w, r, indexPath)
+		return
 	}
 
 	// 兜底：返回内嵌的简单 HTML
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(defaultHTML))
+}
+
+// resolveTemplateDir 查找模板文件所在目录，按优先级搜索
+func resolveTemplateDir(subpath string) string {
+	candidates := []string{
+		"internal/ui/templates/" + subpath,
+		"ui/templates/" + subpath,
+		"templates/" + subpath,
+		subpath,
+	}
+	for _, p := range candidates {
+		if info, err := os.Stat(p); err == nil {
+			if info.IsDir() || subpath != "" {
+				return p
+			}
+		}
+	}
+	// 兜底返回第一个候选路径
+	return candidates[0]
 }
 
 // ---------- 辅助函数 ----------
