@@ -757,6 +757,9 @@ func (m Model) renderFooter() string {
 // ============================================================================
 
 func (m *Model) updateOverviewTable() {
+	// 先清空旧行，防止切换 Tab 时列数不匹配导致 bubbles/table renderRow panic
+	m.overviewTable.SetRows([]table.Row{})
+
 	columns := []table.Column{
 		{Title: "Version", Width: 25},
 	}
