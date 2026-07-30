@@ -74,6 +74,52 @@ func (s *StageTimingData) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
+// UnmarshalJSON 自定义反序列化：从扁平 JSON 重建 Groups
+// DB 中存储的是 MarshalJSON 产出的扁平结构，必须反向还原
+func (s *StageTimingData) UnmarshalJSON(data []byte) error {
+	// 先用 map 接收所有字段
+	raw := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	// 提取已知字段
+	if v, ok := raw["density"]; ok {
+		json.Unmarshal(v, &s.Density)
+		delete(raw, "density")
+	}
+	if v, ok := raw["congestion"]; ok {
+		json.Unmarshal(v, &s.Congestion)
+		delete(raw, "congestion")
+	}
+	if v, ok := raw["images"]; ok {
+		json.Unmarshal(v, &s.Images)
+		delete(raw, "images")
+	}
+	if v, ok := raw["abs_dir_path"]; ok {
+		json.Unmarshal(v, &s.AbsDirPath)
+		delete(raw, "abs_dir_path")
+	}
+	if v, ok := raw["reg2reg_summary"]; ok {
+		var summary Reg2RegSummary
+		if err := json.Unmarshal(v, &summary); err == nil {
+			s.Reg2RegSummary = &summary
+		}
+		delete(raw, "reg2reg_summary")
+	}
+
+	// 剩余字段全部是时序分组（all, reg2reg, in2reg, reg2out, in2out, default 等）
+	s.Groups = make(map[string]*TimingGroup)
+	for k, v := range raw {
+		var tg TimingGroup
+		if err := json.Unmarshal(v, &tg); err == nil {
+			s.Groups[k] = &tg
+		}
+	}
+
+	return nil
+}
+
 // DRCTotal 50.route 阶段的 DRC 违例汇总
 type DRCTotal struct {
 	ECODRCMax  int `json:"eco_drc_max"`
