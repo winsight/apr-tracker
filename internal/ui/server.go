@@ -125,7 +125,10 @@ func (s *Server) handleRunParse(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
-	results, err := s.engine.RunParse(ctx, targetModule)
+	// 传入已有记录，实现增量解析（已有数据的 Parser 跳过）
+	existingRecords, _ := s.db.GetHistory(req.Module)
+
+	results, err := s.engine.RunParse(ctx, targetModule, existingRecords)
 	if err != nil {
 		writeJSON(w, 500, fmt.Sprintf("解析失败: %v", err), nil)
 		return

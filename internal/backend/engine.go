@@ -53,13 +53,21 @@ type ParseResult struct {
 	Runtime     models.RuntimeReport
 	CellUsage   map[string]models.CellUsageReport
 	Error       error
+	Skipped     []string // 跳过的解析器名称（数据已存在）
 }
 
 // RunParse 执行解析流程
-// 如果 module 非空，仅解析指定模块的当前最新版本 ("current" 模式)
-// 如果 module 为空，解析所有模块的所有版本 ("all" 模式)
-func (e *Engine) RunParse(ctx context.Context, module string) ([]*ParseResult, error) {
-	// 确定要解析的模块列表
+// existingRecords: 数据库中已有的版本记录（用于增量解析，跳过已有数据的 Parser）
+// 如果 module 非空，仅解析指定模块（"current" 模式）
+// 如果 module 为空，解析所有模块（"all" 模式）
+func (e *Engine) RunParse(ctx context.Context, module string, existingRecords []*models.VersionRecord) ([]*ParseResult, error) {
+	// 构建 module:version → record 快速查找表
+	existingMap := make(map[string]*models.VersionRecord)
+	for _, r := range existingRecords {
+		key := r.Module + ":" + r.Version
+		existingMap[key] = r
+	}
+
 	var modules []string
 	if module != "" {
 		modules = []string{module}
@@ -88,23 +96,21 @@ func (e *Engine) RunParse(ctx context.Context, module string) ([]*ParseResult, e
 			continue
 		}
 
-		// 扫描版本
 		versions, err := ScanVersions(ctx, modulePath)
 		if err != nil {
 			fmt.Printf("[Engine] 扫描版本失败 [%s]: %v\n", mod, err)
 			continue
 		}
 
-		// 并发解析每个版本
 		g, gCtx := errgroup.WithContext(ctx)
 		results := make([]*ParseResult, len(versions))
 
 		for i, ver := range versions {
-			i, ver := i, ver // capture
+			i, ver := i, ver
+			existing := existingMap[mod+":"+ver]
 			g.Go(func() error {
-				result, err := e.parseVersion(gCtx, modulePath, mod, ver)
+				result, err := e.parseVersion(gCtx, modulePath, mod, ver, existing)
 				if err != nil {
-					// 单版本解析失败不中断其他版本
 					fmt.Printf("[Engine] 解析版本失败 [%s/%s]: %v\n", mod, ver, err)
 					result = &ParseResult{
 						Module:  mod,
@@ -113,7 +119,7 @@ func (e *Engine) RunParse(ctx context.Context, module string) ([]*ParseResult, e
 					}
 				}
 				results[i] = result
-				return nil // 不中断 errgroup
+				return nil
 			})
 		}
 
@@ -129,8 +135,8 @@ func (e *Engine) RunParse(ctx context.Context, module string) ([]*ParseResult, e
 	return allResults, nil
 }
 
-// parseVersion 解析单个版本的完整数据
-func (e *Engine) parseVersion(ctx context.Context, modulePath, moduleName, version string) (*ParseResult, error) {
+// parseVersion 解析单个版本的完整数据（增量：已有数据的 Parser 跳过）
+func (e *Engine) parseVersion(ctx context.Context, modulePath, moduleName, version string, existing *models.VersionRecord) (*ParseResult, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -140,35 +146,57 @@ func (e *Engine) parseVersion(ctx context.Context, modulePath, moduleName, versi
 	rptBase := filepath.Join(modulePath, "rpt", version)
 	moduleShortName := GetModuleNameFromPath(modulePath)
 
-	// 扫描该版本已完成的阶段
 	stages, err := ScanStages(ctx, rptBase, moduleShortName)
 	if err != nil {
 		return nil, fmt.Errorf("扫描阶段失败: %w", err)
 	}
 
+	// 以已有数据为基底
 	result := &ParseResult{
 		Module:      moduleName,
 		Version:     version,
 		StagesFound: stages,
 	}
-
-	// 并发执行所有已注册的 Parser
-	type parserResult struct {
-		name string
-		data interface{}
-		err  error
+	if existing != nil {
+		result.Timing = existing.Timing
+		result.DRC = existing.DRC
+		result.Latency = existing.Latency
+		result.Runtime = existing.Runtime
+		result.CellUsage = existing.CellUsage
 	}
 
-	parserResults := make([]parserResult, len(e.parsers))
-	var wg sync.WaitGroup
+	// 筛选出需要执行的 Parser（已有数据则跳过）
+	type parserResult struct {
+		name   string
+		data   interface{}
+		err    error
+		skipped bool
+	}
+
+	var toRun []models.Parser
+	var toRunIdx []int
 
 	for i, parser := range e.parsers {
-		i, parser := i, parser
+		if existing != nil && parserHasData(parser.Name(), existing) {
+			result.Skipped = append(result.Skipped, parser.Name())
+			fmt.Printf("[Engine] %s/%s: %s 数据已存在，跳过\n", moduleName, version, parser.Name())
+		} else {
+			toRun = append(toRun, parser)
+			toRunIdx = append(toRunIdx, i)
+		}
+	}
+
+	// 并发执行需要运行的 Parser
+	prs := make([]parserResult, len(e.parsers))
+	var wg sync.WaitGroup
+
+	for j, parser := range toRun {
+		j, parser := j, parser
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			data, err := parser.Parse(ctx, modulePath, version, moduleShortName, stages)
-			parserResults[i] = parserResult{
+			prs[toRunIdx[j]] = parserResult{
 				name: parser.Name(),
 				data: data,
 				err:  err,
@@ -177,14 +205,14 @@ func (e *Engine) parseVersion(ctx context.Context, modulePath, moduleName, versi
 	}
 	wg.Wait()
 
-	// 将解析结果分发到对应字段
-	for _, pr := range parserResults {
+	// 将新解析结果覆盖到对应字段
+	for _, pr := range prs {
 		if pr.err != nil {
 			fmt.Printf("[Engine] %s 解析出错: %v\n", pr.name, pr.err)
 			continue
 		}
 		if pr.data == nil {
-			continue
+			continue // Parser 返回 nil 表示无数据（如阶段不存在）
 		}
 
 		switch pr.name {
@@ -212,6 +240,26 @@ func (e *Engine) parseVersion(ctx context.Context, modulePath, moduleName, versi
 	}
 
 	return result, nil
+}
+
+// parserHasData 判断某个 Parser 的数据在已有记录中是否已存在
+func parserHasData(name string, r *models.VersionRecord) bool {
+	switch name {
+	case "TimingParser":
+		return r.Timing != nil && len(r.Timing) > 0
+	case "DRCParser":
+		return r.DRC != nil && r.DRC["50"] != nil
+	case "LatencyParser":
+		if r.Latency == nil {
+			return false
+		}
+		return len(r.Latency.Standard) > 0 || len(r.Latency.Cluster) > 0
+	case "RuntimeParser":
+		return r.Runtime != nil && len(r.Runtime) > 0
+	case "CellUsageParser":
+		return r.CellUsage != nil && len(r.CellUsage) > 0
+	}
+	return false
 }
 
 // GetRegisteredParsers 返回已注册的解析器名称列表

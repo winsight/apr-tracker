@@ -213,11 +213,12 @@ func (m Model) fetchHistoryCmd() tea.Cmd {
 }
 
 func (m Model) runParseCmd() tea.Cmd {
+	records := m.records // 捕获当前已加载的版本记录
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 
-		results, err := m.engine.RunParse(ctx, m.currentModule)
+		results, err := m.engine.RunParse(ctx, m.currentModule, records)
 		if err != nil {
 			return parseDoneMsg{err: err}
 		}
