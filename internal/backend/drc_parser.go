@@ -133,15 +133,12 @@ func (p *DRCParser) extractDRC(ctx context.Context, filepath_ string, modulePath
 			if strings.Contains(stripped, "Total number of violations on LAYER T2M2") {
 				inDRCBlock = false
 			}
-		}
 
-		// 抓取 Short 违例 Block
-		if strings.Contains(stripped, "By Layer and Type") {
+		// 抓取 Short 违例 Block（elif 链：与 DRC block 互斥，对标 Python）
+		} else if strings.Contains(stripped, "By Layer and Type") {
 			shortBlock = nil
 			inShortBlock = true
-			continue
-		}
-		if inShortBlock {
+		} else if inShortBlock {
 			if strings.Contains(stripped, "#cpu time") || strings.Contains(stripped, "Complete Detail Routing") {
 				inShortBlock = false
 			} else if strings.Contains(stripped, "By Non-Default Rule") {
@@ -173,7 +170,7 @@ func (p *DRCParser) extractDRC(ctx context.Context, filepath_ string, modulePath
 	if len(drcBlock) > 0 {
 		firstLineVal := strings.Split(drcBlock[0], "=")
 		if len(firstLineVal) >= 2 {
-			maxDR, _ := strconv.Atoi(strings.TrimSpace(firstLineVal[1]))
+			maxDR, _ := strconv.Atoi(strings.TrimSpace(firstLineVal[len(firstLineVal)-1]))
 			res.ECODRCMax = maxDR
 
 			if maxDR == 0 {
@@ -187,7 +184,7 @@ func (p *DRCParser) extractDRC(ctx context.Context, filepath_ string, modulePath
 						if strings.Contains(lineToCheck, layerKey) {
 							parts := strings.Split(lineToCheck, "=")
 							if len(parts) >= 2 {
-								valStr := strings.TrimSpace(parts[1])
+								valStr := strings.TrimSpace(parts[len(parts)-1])
 								if v, err := strconv.Atoi(valStr); err == nil {
 									dpSum += v
 								}
