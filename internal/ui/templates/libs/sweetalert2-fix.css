@@ -1,0 +1,35 @@
+/* SweetAlert2 自定义样式适配 — APR Tracker Dashboard */
+
+/* 弹窗字体与圆角 */
+.swal2-popup {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+    border-radius: 12px !important;
+}
+
+/* 标题对齐 */
+.swal2-title {
+    text-align: left !important;
+    font-size: 1.1rem !important;
+}
+
+/* 内容区域 */
+.swal2-html-container {
+    text-align: left !important;
+    font-size: 0.9rem !important;
+}
+
+/* 确认按钮 */
+.swal2-confirm {
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+}
+
+/* 取消按钮 */
+.swal2-cancel {
+    border-radius: 6px !important;
+}
+
+/* Toast 弹窗 */
+.swal2-toast {
+    border-radius: 8px !important;
+}
