@@ -1,0 +1,71 @@
+# =============================================================================
+# APR Tracker 配置文件
+# 所有易变参数均通过此文件配置，修改后无需重新编译
+# =============================================================================
+
+# 用户根目录（所有模块的父目录基础路径）
+user_root_dir: /home/w00949819/Documents/Proj/
+
+# Owner → 模块名列表映射
+# 路径范式: {user_root_dir}/{owner}/*{module}/
+# 注意: "20.APR.LEON" 中的数字前缀 20 会变化，程序会自动模糊匹配并定位到最新修改的目录
+owner_modules:
+  w00949819:
+    - LEON
+    - PCIE_ICL0
+
+# 启用的解析器列表
+# 可选值: TimingParser, DRCParser, LatencyParser, RuntimeParser, CellUsageParser
+enabled_parsers:
+  - TimingParser
+  - DRCParser
+  - LatencyParser
+  - RuntimeParser
+  - CellUsageParser
+
+# 关注标志
+care_flag: normal
+
+# -----------------------------------------------------------------------------
+# Latency / Clock Skew 解析配置
+# -----------------------------------------------------------------------------
+
+# 目标分析 corner（corner 名称在报告文件中作为段落标题出现）
+latency_target_corner: "delay_cworst_CCworst_T:wcz:0:both.late"
+
+# 时钟域前缀匹配规则（按模块区分，default 为兜底值）
+latency_skew_pattern:
+  PCIE_ICLO:
+    - CLK_PCIE_ROOT
+    - CLK_SYS_DEFAULT_ROOT
+  default: CLK_SYS_DEFAULT_ROOT
+
+# -----------------------------------------------------------------------------
+# Runtime 解析模式配置
+# -----------------------------------------------------------------------------
+
+# 可选值:
+#   "log_end"  - 原方式，逆读日志末尾的 real=xxx 时间（速度最快）
+#   "db_diff"  - 插值方式，通过 restoreDesign / saveDesign 时间戳计算差值
+#                适用于中途 Crash 导致 log_end 抓不到的场景
+runtime_parse_mode:
+  PCIE_ICLO: "db_diff"
+  PCIE_ICLO_SMMU_WRAP: "db_diff"
+  default: "log_end"
+
+# -----------------------------------------------------------------------------
+# Run Parsers 按钮行为配置
+# -----------------------------------------------------------------------------
+
+# "current" : 极速模式，仅重新抓取和解析前端当前正在查看的 Module（默认）
+# "all"     : 全量模式，无视当前页面，强制遍历并抓取所有 Module 的数据
+run_parsers_mode: "current"
+
+# -----------------------------------------------------------------------------
+# 时序报告图片备份配置
+# -----------------------------------------------------------------------------
+
+# backup_images: 是否开启图片备份（true / false）
+# image_backup_path: 备份存放的根目录绝对路径（如果设为空，则自动降级为不备份）
+backup_images: true
+image_backup_path: "/data/Your_Project_Dashboard/storage/images_backup"
