@@ -68,4 +68,4 @@ run_parsers_mode: "current"
 # backup_images: 是否开启图片备份（true / false）
 # image_backup_path: 备份存放的根目录绝对路径（如果设为空，则自动降级为不备份）
 backup_images: true
-image_backup_path: "/data/Your_Project_Dashboard/storage/images_backup"
+image_backup_path: "/home/w00949819/Documents/Proj/"
