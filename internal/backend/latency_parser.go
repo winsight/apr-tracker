@@ -145,9 +145,9 @@ func (p *LatencyParser) extractLatency(ctx context.Context, filepath_ string, ta
 	return results, nil
 }
 
-// getModuleConfig 从配置中提取模块专属配置值（支持 dict + default 模式）
+// getModuleConfig 从配置中提取模块专属配置值（支持 string 字面值和 dict{module: value, default: value} 两种模式）
+// 与 Python _get_module_specific_config 行为一致
 func (p *LatencyParser) getModuleConfig(key, moduleName, fallback string) string {
-	// 尝试从 latency_skew_pattern 等字典配置中获取
 	var raw interface{}
 	switch key {
 	case "latency_target_corner":
@@ -158,16 +158,16 @@ func (p *LatencyParser) getModuleConfig(key, moduleName, fallback string) string
 
 	switch v := raw.(type) {
 	case string:
-		return v
+		return strings.TrimSpace(v)
 	case map[string]interface{}:
 		if val, ok := v[moduleName]; ok {
 			if s, ok := val.(string); ok {
-				return s
+				return strings.TrimSpace(s)
 			}
 		}
 		if val, ok := v["default"]; ok {
 			if s, ok := val.(string); ok {
-				return s
+				return strings.TrimSpace(s)
 			}
 		}
 		return fallback
@@ -188,25 +188,39 @@ func (p *LatencyParser) getSkewPatterns(moduleName string) []string {
 	if val, ok := raw["default"]; ok {
 		return toStringSlice(val)
 	}
-	// 兜底
-	return []string{"CLK_SYS_DEFAULT_ROOT"}
+	// 兜底（与 Python 默认值保持一致）
+	return []string{"CLK_PLL_ICL_M_OCC_ROOT"}
 }
 
 // toStringSlice 将 interface{} 转为 []string
 func toStringSlice(v interface{}) []string {
 	switch val := v.(type) {
 	case string:
-		return []string{val}
+		s := strings.TrimSpace(val)
+		if s == "" {
+			return nil
+		}
+		return []string{s}
 	case []interface{}:
 		var result []string
 		for _, item := range val {
 			if s, ok := item.(string); ok {
-				result = append(result, s)
+				s = strings.TrimSpace(s)
+				if s != "" {
+					result = append(result, s)
+				}
 			}
 		}
 		return result
 	case []string:
-		return val
+		var result []string
+		for _, s := range val {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				result = append(result, s)
+			}
+		}
+		return result
 	default:
 		return nil
 	}
