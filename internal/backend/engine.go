@@ -243,10 +243,13 @@ func (e *Engine) parseVersion(ctx context.Context, modulePath, moduleName, versi
 }
 
 // parserHasData 判断某个 Parser 的数据在已有记录中是否已存在
+// 注意: TimingParser 永远不跳过，因为:
+//   1. summary 文件很小，解析速度极快
+//   2. timeDesign.dir 下可能随时新增 GIF 图片，必须每次扫描
 func parserHasData(name string, r *models.VersionRecord) bool {
 	switch name {
 	case "TimingParser":
-		return r.Timing != nil && len(r.Timing) > 0
+		return false // 始终运行，确保 GIF 扫描不遗漏
 	case "DRCParser":
 		return r.DRC != nil && r.DRC["50"] != nil
 	case "LatencyParser":
