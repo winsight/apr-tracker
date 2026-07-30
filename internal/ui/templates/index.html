@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>APR PD Auto-Tracker</title>
+    
+    <script src="./libs/vue.global.js"></script>
+    <script src="./libs/echarts.min.js"></script>
+    
+    <script src="./libs/sweetalert2.all.min.js"></script>
+    <link rel="stylesheet" href="./libs/tailwind.min.css">
+    <link rel="stylesheet" href="./libs/sweetalert2-fix.css">
+    
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-8 -8 48 48'%3E%3Crect x='6' y='6' width='20' height='20' rx='3' fill='%230052cc'/%3E%3Crect x='11' y='11' width='10' height='10' rx='1' fill='none' stroke='%23fff' stroke-width='2'/%3E%3Cpath d='M10 6V3m6 3V3m6 3V3M10 26v3m6-3v3m6-3v3M6 10H3m3 6H3m3 6H3m20-12h3m-3 6h3m-3 6h3' stroke='%230052cc' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E" type="image/svg+xml">
+    
+    <style>
+        :root {
+            --primary: #0052cc;
+            --danger: #de350b;
+            --success: #00875a;
+            --border-color: #dfe1e6;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #ebecf0; margin: 0; padding: 20px; }
+        /*.container { max-width: 1600px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 8px rgba(9, 30, 66, 0.15); }*/
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid var(--border-color); padding-bottom: 15px; }
+        .header h2 { margin: 0 0 5px 0; color: #172b4d; }
+        
+        button { background: var(--primary); color: white; border: none; padding: 10px 24px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 14px; transition: background 0.2s; }
+        button:hover { background: #0747a6; }
+        button:disabled { background: #b3bac5; cursor: not-allowed; }
+        .btn-secondary { background: white; color: #172b4d; border: 1px solid var(--border-color); margin-right: 12px; }
+        .btn-secondary:hover { background: #f4f5f7; }
+        .btn-mini { background: #ebecf0; color: #172b4d; border: none; padding: 4px 8px; border-radius: 3px; font-size: 12px; cursor: pointer; font-weight: 600;}
+        .btn-mini:hover { background: #dfe1e6; }
+        
+        .table-wrapper { overflow-x: auto; margin-top: 15px; border: 1px solid var(--border-color); border-radius: 4px; width: 100%; }
+        table.main-table { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; table-layout: auto; }
+        table.main-table th, table.main-table td { border: 1px solid var(--border-color); padding: 10px 12px; text-align: left; min-width: 160px; vertical-align: top;}
+        table.main-table th { background-color: #fafbfc; color: #5e6c84; font-weight: 600; position: sticky; top: 0; z-index: 10; }
+        
+        .highlight-danger { color: var(--danger); font-weight: bold; background-color: #ffebe6; padding: 2px 4px; border-radius: 3px; }
+        .highlight-success { color: var(--success); font-weight: bold; background-color: #e3fcef; padding: 2px 4px; border-radius: 3px; }
+        .time-cell { font-family: Consolas, monospace; font-size: 12px; color: #42526e; }
+        #chart { width: 100%; height: 450px; margin-top: 40px; }
+        
+        .swal2-popup { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }
+        .stage-badge { display: inline-block; width: 28px; text-align: center; background: #e9ecef; color: #5e6c84; border-radius: 3px; font-weight: bold; font-size: 11px; padding: 1px 0; margin-right: 6px; }
+        /* 将 Latency 列独立定义以加宽 */
+        .latency-col { min-width: 250px !important; }
+        .container { 
+            max-width: 95vw;     /* 允许页面宽度超过 1600px */
+            min-width: 1000px;   /* 设定最小宽度，防止缩太小导致排版混乱 */
+            margin: 0 auto; 
+            background: white; 
+            padding: 25px; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 8px rgba(9, 30, 66, 0.15); 
+            
+            /* ★ 核心：开启窗口式拉伸支持 */
+            resize: horizontal; 
+            overflow: auto; 
+            border-right: 2px solid var(--border-color); /* 显式边界线 */
+        }
+        /* 优化图表容器，使其支持横向滚动 */
+        .chart-wrapper {
+            width: 100%;
+            overflow-x: auto;       /* 超出宽度时显示滚动条 */
+            padding-bottom: 10px;   /* 防止滚动条盖住图表底部 */
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: white;
+        }
+        
+        /* 强制图表最小宽度，避免在窄屏下被压缩变形 */
+        #chart {
+            min-width: 800px;       /* 无论窗口多小，图表至少保持800px宽度，不够就出滚动条 */
+            height: 450px;
+        }
+        html {
+            font-size: 18px !important; 
+        }
+        .footer .power-by {
+            /* 初始状态透明 */
+            opacity: 0;
+            /* 过渡动画效果，让显示更平滑 */
+            transition: opacity 0.3s ease-in-out;
+            /* 可选：让文字变为灰色，显得低调 */
+            color: #666; 
+            margin-left: 5px;
+        }
+        .footer { margin-top: 40px; padding-top: 20px; border-top: 1px dashed var(--border-color); text-align: center; color: #8993a4; font-size: 12px; }
+        .footer span { color: #5e6c84; font-weight: 600; }
+
+        .footer:hover .power-by {
+            /* 鼠标移入 footer 时显示 */
+            opacity: 1;
+        }
+        
+    </style>
+    <script>
+        document.addEventListener('contextmenu', event => event.preventDefault());
+        document.onkeydown = function(e) {
+            if(e.keyCode == 123) { return false; }
+            if(e.ctrlKey && e.shiftKey && e.keyCode == 'I'.charCodeAt(0)) { return false; }
+            if(e.ctrlKey && e.shiftKey && e.keyCode == 'J'.charCodeAt(0)) { return false; }
+            if(e.ctrlKey && e.keyCode == 'U'.charCodeAt(0)) { return false; }
+        }
+    </script>
+</head>
+<body>
+    <div id="app" class="container">
+        <div class="header">
+            <div>
+              <h2 style="display: flex; align-items: center; gap: 15px;">
+                  📦 APR Tracker Dashboard
+                  <select v-model="currentModule" @change="fetchHistory" style="padding: 5px 10px; font-size: 16px; border-radius: 4px; border: 1px solid #dfe1e6; outline: none; cursor: pointer;">
+                      <option v-for="mod in availableModules" :key="mod" :value="mod">
+                          {{ mod }}
+                      </option>
+                  </select>
+              </h2>
+              <small>Auto Place and Route Status & Quality Monitor</small>
+            </div>
+            <div class="flex items-center gap-3">
+                <button class="btn-secondary flex items-center gap-1" @click="fetchHistory">
+                    🔄 Refresh
+                </button>
+                <button class="btn-primary bg-gray-600 hover:bg-gray-700 text-white flex items-center gap-2" @click="openSettings">
+                    ⚙️ Settings
+                </button>
+                <button class="btn-primary flex items-center gap-1" @click="runTrigger" :disabled="loading">
+                    {{ loading ? '⏳ Parsing...' : '🚀 Run Parsers' }}
+                </button>
+            </div>
+        </div>
+
+        <div class="table-wrapper" v-if="historyData.length > 0">
+
+          <div class="mb-3 p-3 bg-white border border-gray-200 rounded shadow-sm">
+              <div class="text-xs font-bold text-gray-500 mb-2 uppercase">Column Visibility 控制台</div>
+              <div class="flex flex-wrap gap-4">
+                  <label v-for="(col, key) in tableColumns" :key="key" 
+                        class="flex items-center gap-1.5 text-sm cursor-pointer select-none hover:text-blue-600 transition-colors">
+                      <input type="checkbox" v-model="col.show" class="rounded text-blue-600 focus:ring-blue-500">
+                      {{ col.label }}
+                  </label>
+              </div>
+          </div>
+            <table class="main-table">
+                <thead>
+                    <tr>
+                        <th style="min-width: 180px;">🚩 Version</th>
+                        <th v-if="tableColumns.note.show">📝 Note</th>
+                        <th v-if="tableColumns.stages.show" style="min-width: 120px;">🧾 Stages Found</th>
+                        <th v-if="tableColumns.latencyStd.show" class="latency-col">Latency (Full)</th>
+                        <th v-if="tableColumns.latencyCls.show" class="latency-col">Latency (Cluster)</th>
+                        
+                        <template v-for="stage in ['10.initial', '30.place', '40.cts', '50.route']" :key="stage">
+                            <th v-if="tableColumns[stage].show" style="min-width: 240px;">
+                                {{ stage.split('.')[0] }} 阶段总览
+                            </th>
+                        </template>
+                        
+                        <th v-if="tableColumns.drc.show" style="min-width: 180px;">50 Route DRC</th>
+                        
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="row in historyData" :key="row.version" :id="'row-' + row.version" class="hover:bg-gray-50 transition-colors duration-500">
+                        <!-- <td class="time-cell" style="font-weight: bold; color: var(--primary);">
+                            {{ row.version }}
+                        </td> -->
+                        <td class="p-3 align-top min-w-[180px]">
+                            <div class="font-bold text-gray-800 text-[13px] break-all">{{ row.version }}</div>
+                            
+                            <div v-if="row.parent_version" 
+                                @click="jumpToVersion(row.parent_version)"
+                                class="mt-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] rounded cursor-pointer hover:bg-indigo-100 hover:shadow-sm transition-all"
+                                title="Click to jump to base version">
+                                ↳ Base: {{ row.parent_version }}
+                            </div>
+                        
+                            <div class="mt-2 flex items-center">
+                                <input type="text" 
+                                      v-model="row.parent_version" 
+                                      @blur="saveRowMeta(row)"
+                                      @keyup.enter="$event.target.blur()"
+                                      class="w-full max-w-[150px] p-1 text-[11px] border border-gray-300 rounded focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 outline-none placeholder-gray-400 bg-gray-50 focus:bg-white transition-all"
+                                      placeholder="Set base version...">
+                            </div>
+                        </td>
+                        <td v-if="tableColumns.note.show" class="w-48 p-2">
+                            <div class="flex items-center gap-1">
+                                <textarea 
+                                    class="flex-1 p-1.5 text-xs border border-gray-300 rounded focus:border-blue-500 outline-none resize-y"
+                                    v-model="row.note" 
+                                    placeholder="Add note..."
+                                    rows="2">
+                                </textarea>
+                                <button class="btn-mini h-12 w-8 bg-green-600 hover:bg-green-700 text-white" 
+                                        @click="saveRowMeta(row)" 
+                                        title="Save Note">
+                                    💾
+                                </button>
+                            </div>
+                        </td>
+                        <td v-if="tableColumns.stages.show">
+                            <div class="flex flex-wrap gap-1">
+                                <span v-for="stage in row.stages_found" :key="stage" class="btn-mini" style="background: #e3fcef; color: var(--success); margin:0;">
+                                    {{ stage }}
+                                </span>
+                            </div>
+                        </td>
+                        <!-- <td class="time-cell">{\{ row.latency || 'N/A' }\}</td> -->
+                        <td v-if="tableColumns.latencyStd.show" class="latency-col">
+                            <div v-if="getLatencyList(row.latency, 'standard').length > 0" class="flex flex-row flex-wrap items-center gap-4 text-xs">
+                                
+                                <div v-for="(item, idx) in getWorstPerDomain(getLatencyList(row.latency, 'standard'))" :key="idx" class="flex flex-col gap-1.5 border-r border-gray-200 pr-4 last:border-0">
+                                    <div class="font-bold text-gray-700 truncate max-w-[160px]" :title="item.group">
+                                        {{ item.group }}
+                                    </div>
+                                    <div class="text-blue-600 font-mono text-[11px]">
+                                        Min:{{ item.min }} | Max:{{ item.max }} | Avg:{{ item.avg }}
+                                    </div>
+                                </div>
+                                
+                                <button class="btn-mini w-24 bg-blue-100 hover:bg-blue-200 text-blue-800" 
+                                        @click="showLatencyDetails(row.version, getLatencyList(row.latency, 'standard'), 'Standard')">
+                                    View Full
+                                </button>
+                            </div>
+                            <span v-else class="text-gray-400 text-xs italic">N/A</span>
+                        </td>
+                        
+                        <td v-if="tableColumns.latencyCls.show" class="latency-col">
+                            <div v-if="getLatencyList(row.latency, 'cluster').length > 0" class="flex flex-row flex-wrap items-center gap-4 text-xs">
+                                
+                                <div v-for="(item, idx) in getWorstPerDomain(getLatencyList(row.latency, 'cluster'))" :key="idx" class="flex flex-col gap-1.5 border-r border-gray-200 pr-4 last:border-0">
+                                    <div class="font-bold text-gray-700 truncate max-w-[160px]" :title="item.group">
+                                        {{ item.group }}
+                                    </div>
+                                    <div class="text-purple-600 font-mono text-[11px]">
+                                        Min:{{ item.min }} | Max:{{ item.max }} | Avg:{{ item.avg }}
+                                    </div>
+                                </div>
+                                
+                                <button class="btn-mini w-28 bg-purple-100 hover:bg-purple-200 text-purple-800" 
+                                        @click="showLatencyDetails(row.version, getLatencyList(row.latency, 'cluster'), 'Cluster')">
+                                    View Cluster
+                                </button>
+                            </div>
+                            <span v-else class="text-gray-400 text-xs italic">N/A</span>
+                        </td>
+                        
+                        <template v-for="stage in ['10.initial', '30.place', '40.cts', '50.route']" :key="stage">
+                            <td v-if="tableColumns[stage].show" class="min-w-[240px]"> 
+                                <div v-if="row.timing && row.timing[stage]" class="flex flex-col gap-1.5 text-xs text-gray-700">
+                                    
+                                    <div class="flex items-center gap-2" v-if="row.timing[stage].reg2reg_summary">
+                                        <span :class="parseFloat(row.timing[stage].reg2reg_summary.wns) < 0 
+                                                ? 'bg-red-50 text-red-600 border-red-200' 
+                                                : 'bg-green-50 text-green-600 border-green-200'" 
+                                            class="px-1.5 py-0.5 rounded border font-bold font-mono text-[11px] shadow-sm">
+                                            WNS: {{ row.timing[stage].reg2reg_summary.wns }}
+                                        </span>
+                                        
+                                        <span class="text-gray-500 text-[11px] font-mono border-l pl-2 border-gray-300">
+                                            TNS: <span class="text-gray-700">{{ row.timing[stage].reg2reg_summary.tns }}</span>
+                                        </span>
+                                    </div>
+                                    
+                                    <div class="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px]">
+                                        <span class="flex items-center gap-1 bg-white px-1.5 py-0.5 rounded border border-gray-200 shadow-sm" title="Density">
+                                            <span class="font-bold text-gray-400">D:</span> 
+                                            <span class="font-mono text-blue-600">{{ row.timing[stage].density }}</span>
+                                        </span>
+                                        
+                                        <span class="flex items-center gap-1 bg-white px-1.5 py-0.5 rounded border border-gray-200 shadow-sm" title="Congestion Overflow">
+                                            <span class="font-bold text-gray-400">O:</span> 
+                                            <span class="font-mono text-blue-600">{{ row.timing[stage].congestion }}</span>
+                                        </span>
+                                    
+                                        <span v-if="row.runtime && (row.runtime[stage] || row.runtime[stage.split('.')[0]])" 
+                                              class="flex items-center gap-1 bg-gray-50 px-1.5 py-0.5 rounded border border-gray-200 shadow-sm"
+                                              title="Stage Runtime">
+                                            ⏳ <span class="font-mono text-blue-600">
+                                                {{ row.runtime[stage] || row.runtime[stage.split('.')[0]] }}
+                                            </span>
+                                        </span>
+                                    </div>
+                            
+                                    <div v-if="row.cellusage && row.cellusage[stage]" class="flex flex-wrap gap-1 mt-1.5">
+                                        <template v-for="(vtData, vtName) in row.cellusage[stage]" :key="vtName">
+                                            <span v-if="vtName !== 'total' && parseFloat(vtData.count_perc) > 1.0" 
+                                                  class="px-1 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 font-mono text-[9px] rounded shadow-sm cursor-help"
+                                                  :title="'Area: ' + vtData.area_perc + '% | Count: ' + vtData.count">
+                                                {{ vtName }}:{{ vtData.count_perc }}%
+                                            </span>
+                                        </template>
+                                    </div>
+                              
+                                    <div v-if="row.timing[stage].images && row.timing[stage].images.length > 0" class="flex flex-wrap gap-1 mt-2">
+                                        <img v-for="img in row.timing[stage].images" 
+                                          :key="img"
+                                          :src="'/api/image?file=' + encodeURIComponent(row.timing[stage].abs_dir_path + '/' + img)"
+                                          @click="previewImage(img, '/api/image?file=' + encodeURIComponent(row.timing[stage].abs_dir_path + '/' + img))"
+                                          class="w-10 h-10 border border-gray-300 cursor-pointer hover:scale-150 transition-transform"
+                                          :title="img + ' (Click to zoom)'">
+                                    </div>
+                                </div>
+                                <div v-else class="text-gray-400 text-xs italic">N/A</div>
+                            </td>
+                        </template>
+                        
+                        <!-- <td v-if="tableColumns.drc.show">
+                            <div v-if="row.drc && row.drc['50']" class="flex flex-col gap-1.5 text-xs text-gray-700">
+                                <div>
+                                    <span class="font-bold text-gray-500">Max Violations:</span> 
+                                    <span :class="row.drc['50'].eco_drc_max > 0 ? 'highlight-danger' : 'highlight-success'">
+                                        {{ row.drc['50'].eco_drc_max }}
+                                    </span>
+                                </div>
+                                <div>
+                                    <span class="font-bold text-gray-500">Layer DP:</span> 
+                                    <span class="font-mono text-blue-600">{{ row.drc['50'].eco_drc_dp }}</span>
+                                </div>
+                                <div>
+                                    <span class="font-bold text-gray-500">Other (Q):</span> 
+                                    <span class="font-mono text-blue-600">{{ row.drc['50'].eco_drc_q }}</span>
+                                </div>
+                            </div>
+                            <div v-else class="text-gray-400 text-xs italic mt-1">N/A</div>
+                        </td> -->
+
+                        <td v-if="tableColumns.drc && tableColumns.drc.show" class="min-w-[180px] p-2 align-top">
+                            <div v-if="row.drc && row.drc['50']" class="flex flex-col gap-1.5 text-[11px] text-gray-700 bg-white p-1.5 border border-gray-100 rounded shadow-sm">
+                                <div class="flex items-center justify-between pb-1 border-b border-gray-100">
+                                    <span class="font-bold text-gray-600">DRC Total:</span> 
+                                    <span :class="row.drc['50'].eco_drc_max > 0 ? 'text-red-600 font-bold bg-red-50 px-1 rounded' : 'text-green-600 font-bold'">
+                                        {{ row.drc['50'].eco_drc_max }}
+                                    </span>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <span class="flex items-center gap-1">
+                                        <span class="font-bold text-gray-400">DP(M4-):</span> 
+                                        <span class="font-mono text-blue-600">{{ row.drc['50'].eco_drc_dp }}</span>
+                                    </span>
+                                    <span class="flex items-center gap-1">
+                                        <span class="font-bold text-gray-400">Q(M5+):</span> 
+                                        <span class="font-mono text-blue-600">{{ row.drc['50'].eco_drc_q }}</span>
+                                    </span>
+                                </div>
+                        
+                                <div class="mt-1 pt-1 border-t border-gray-100">
+                                    <div class="font-bold text-orange-600 mb-0.5">⚠️ Short Violations:</div>
+                                    <div class="flex items-center gap-3">
+                                        <span class="flex items-center gap-1">
+                                            <span class="font-bold text-gray-400">DP(M4-):</span> 
+                                            <span class="font-mono text-orange-600 font-semibold">{{ row.drc['50'].eco_short_dp || 0 }}</span>
+                                        </span>
+                                        <span class="flex items-center gap-1">
+                                            <span class="font-bold text-gray-400">Q(M5+):</span> 
+                                            <span class="font-mono text-orange-600 font-semibold">{{ row.drc['50'].eco_short_q || 0 }}</span>
+                                        </span>
+                                    </div>
+                                </div>
+                        
+                            </div>
+                            <div v-else class="text-gray-400 text-xs italic p-2">N/A</div>
+                        </td>
+
+                        <td>
+                          <div class="flex flex-col gap-2 w-36">
+                              <button class="btn-mini w-full hover:shadow flex justify-center items-center gap-1" 
+                                      style="background-color: var(--primary); color: white;" 
+                                      @click="showDetails(row)">
+                                  ⏱️ Timing Details
+                              </button>
+                              
+                              <button v-if="row.cellusage" 
+                                      class="btn-mini w-full hover:shadow bg-indigo-600 hover:bg-indigo-700 text-white flex justify-center items-center gap-1" 
+                                      @click="showVTDetails(row)">
+                                  🔋 VT Usage
+                              </button>
+
+                              <button class="btn-mini w-full hover:shadow bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 flex justify-center items-center gap-1 transition-colors" 
+                                      @click="deleteVersion(row)">
+                                  🗑️ Delete
+                              </button>
+                          </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div v-else style="text-align: center; padding: 40px; color: #5e6c84; background: #fafbfc; border: 1px dashed var(--border-color); border-radius: 4px;">
+            No parsed data available, please click the button above to trigger data fetching.
+        </div>
+
+        <div class="chart-wrapper">
+            <div style="padding: 15px 15px 0 15px;">
+                <h3 style="margin: 0 0 10px 0; color: #172b4d; font-size: 16px;">📊 Trend Analysis Trend Analysis (Multi-Stage TNS & 50.route DRC)</h3>
+            </div>
+            <div id="chart"></div>
+        </div>
+
+        <div v-if="showSettings" class="fixed inset-0 z-50 flex justify-center items-center bg-black bg-opacity-40 backdrop-blur-sm transition-opacity">
+          <div class="bg-white rounded-xl shadow-2xl w-[600px] flex flex-col max-h-[85vh] transform transition-all">
+              
+              <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-xl">
+                  <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                      ⚙️ Project Configuration
+                  </h2>
+                  <button @click="showSettings = false" class="text-gray-400 hover:text-red-500 transition-colors text-xl">
+                      ✖
+                  </button>
+              </div>
+              
+              <!-- <div class="p-6 overflow-y-auto flex-1 space-y-5 bg-white">
+                  <div class="text-xs text-gray-500 mb-4 bg-blue-50 p-2 rounded text-blue-700 border border-blue-100">
+                      💡 提示: 数组类型的配置（如解析器、模块名）请用英文逗号 <code>,</code> 隔开。修改保存后立即生效。
+                  </div>
+                  
+                  <div v-for="(val, key) in configForm" :key="key" class="flex flex-col gap-1.5">
+                      <label class="text-xs font-bold text-gray-600 uppercase tracking-wider">
+                          {{ key.replace(/_/g, ' ') }}
+                      </label>
+                      
+                      <input v-if="typeof val === 'string' || typeof val === 'number'" 
+                             type="text" 
+                             v-model="configForm[key]" 
+                             class="w-full p-2 text-sm border border-gray-300 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all bg-gray-50 focus:bg-white text-gray-800 font-mono">
+                      
+                      <textarea v-else-if="Array.isArray(val)" 
+                                v-model="configForm[key]" 
+                                rows="2"
+                                class="w-full p-2 text-sm border border-gray-300 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all bg-gray-50 focus:bg-white text-gray-800 font-mono resize-y"
+                                placeholder="item1, item2, item3..."></textarea>
+                  </div>
+              </div> -->
+
+              <div class="p-6 overflow-y-auto flex-1 space-y-6 bg-white text-left">
+                  <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                      <h3 class="text-sm font-bold text-gray-700 mb-3 flex items-center gap-1.5">📁 基础项目环境</h3>
+                      <div class="space-y-4">
+                          <div v-for="(val, key) in configForm" :key="key">
+                              <div v-if="typeof val === 'string' || typeof val === 'number'" class="flex flex-col gap-1">
+                                  <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">{{ key.replace(/_/g, ' ') }}</label>
+                                  <input type="text" v-model="configForm[key]" class="w-full p-2 text-sm border border-gray-300 rounded font-mono text-gray-800 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none">
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              
+                  <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                      <h3 class="text-sm font-bold text-gray-700 mb-3 flex items-center gap-1.5">🧾 流程与模块控制 (数组列表)</h3>
+                      <div class="space-y-4">
+                          <div v-for="(val, key) in configForm" :key="key">
+                              <div v-if="Array.isArray(val)" class="flex flex-col gap-1.5">
+                                  <label class="text-xs font-bold text-gray-500 uppercase tracking-wider">{{ key.replace(/_/g, ' ') }}</label>
+                                  <div class="flex flex-wrap gap-1.5 p-2 bg-white border border-gray-200 rounded min-h-[40px]">
+                                      <span v-for="(item, idx) in val" :key="idx" class="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs rounded font-mono">
+                                          {{ item }}
+                                          <button @click="val.splice(idx, 1)" class="text-indigo-400 hover:text-red-500 font-bold ml-1">×</button>
+                                      </span>
+                                      <div v-if="val.length === 0" class="text-gray-400 text-xs italic self-center">无数据，请添加...</div>
+                                  </div>
+                                  <div class="flex gap-2 mt-1">
+                                      <input type="text" :id="'new-item-' + key" placeholder="输入新值..." class="p-1.5 text-xs border border-gray-300 rounded flex-1 font-mono outline-none">
+                                      <button @click="addArrayItem(key)" class="px-3 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700 font-medium">Add</button>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              
+                <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-sm font-bold text-gray-700 flex items-center gap-1.5">⚙️ 扩展字典配置 (Objects)</h3>
+                        <button @click="createNewDictionary" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded font-medium shadow-sm flex items-center gap-1">
+                            ➕ 新增配置词典
+                        </button>
+                    </div>
+                    
+                    <div class="space-y-4 max-h-[50vh] overflow-y-auto pr-2">
+                        
+                        <div v-for="(dictVal, dictKey) in configForm" :key="dictKey">
+                            <div v-if="dictVal && typeof dictVal === 'object' && !Array.isArray(dictVal)" class="border border-gray-300 rounded-lg p-3 bg-white shadow-sm relative">
+                                <div class="flex justify-between items-center border-b pb-2 mb-3">
+                                    <span class="text-xs font-bold text-indigo-700 uppercase font-mono bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                                        📂 {{ dictKey }}
+                                    </span>
+                                    <button @click="delete configForm[dictKey]" class="text-xs text-red-500 hover:text-red-700 font-medium">删除整个词典</button>
+                                </div>
+                                
+                                <div class="space-y-2 max-h-[30vh] overflow-y-auto pr-1">
+                                    <div v-for="(v, k) in dictVal" :key="k" class="flex items-center gap-2">
+                                        <span class="text-xs font-mono font-semibold text-gray-600 min-w-[120px] truncate" :title="k">{{ k }}:</span>
+                                        <input type="text" v-model="dictVal[k]" class="flex-1 p-1 text-xs border border-gray-200 rounded font-mono bg-gray-50 focus:bg-white outline-none">
+                                        <button @click="delete dictVal[k]" class="text-gray-400 hover:text-red-500 font-bold px-1">×</button>
+                                    </div>
+                                    <div v-if="Object.keys(dictVal).length === 0" class="text-gray-400 text-xs italic py-1">空词典，请添加键值对...</div>
+                                </div>
+                                
+                                <div class="flex gap-2 mt-3 pt-2 border-t border-dashed border-gray-200">
+                                    <input type="text" :id="'new-k-' + dictKey" placeholder="新 Key" class="w-1/3 p-1 text-xs border border-gray-300 rounded font-mono outline-none">
+                                    <input type="text" :id="'new-v-' + dictKey" placeholder="新 Value" class="w-2/3 p-1 text-xs border border-gray-300 rounded font-mono outline-none">
+                                    <button @click="addDictionaryPair(dictKey)" class="px-2.5 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 font-medium">+ Key</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                    
+              </div>
+              
+              <div class="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-xl">
+                  <button @click="showSettings = false" class="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded hover:bg-gray-100 transition-colors">
+                      Cancel
+                  </button>
+                  <button @click="saveSettings" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 shadow-sm transition-all flex items-center gap-1">
+                      💾 Save Configuration
+                  </button>
+              </div>
+              
+          </div>
+        </div>
+
+        <div class="fixed bottom-10 right-8 flex flex-col gap-3 z-50">
+            <button @click="scrollToTop" 
+                    class="w-11 h-11 bg-white text-gray-500 rounded-full shadow-lg border border-gray-200 flex items-center justify-center text-xl hover:bg-gray-50 hover:text-indigo-600 hover:shadow-xl transition-all transform hover:-translate-y-1"
+                    title="返回顶部">
+                ▲
+            </button>
+            <button @click="scrollToBottom" 
+                    class="w-11 h-11 bg-white text-gray-500 rounded-full shadow-lg border border-gray-200 flex items-center justify-center text-xl hover:bg-gray-50 hover:text-indigo-600 hover:shadow-xl transition-all transform hover:translate-y-1"
+                    title="直达底部 (图表区)">
+                ▼
+            </button>
+        </div>
+
+        <!-- 新增：版权与作者信息 -->
+        <div class="footer">
+            &copy; 2026 IC Project EDA Board. All rights reserved. | 
+            Author: <span>w00949819</span> 
+            <span class="power-by">Power by <span>Gemini</span></span>
+        </div>
+
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted, nextTick } = Vue;
+
+        createApp({
+            setup() {
+                const availableModules = ref([]);
+                const currentModule = ref('');
+
+                // ★ 新增：平滑滚动到顶部
+                const scrollToTop = () => {
+                    window.scrollTo({
+                        top: 0,
+                        behavior: 'smooth' // 开启丝滑过渡
+                    });
+                };
+
+                // ★ 新增：平滑滚动到底部
+                const scrollToBottom = () => {
+                    window.scrollTo({
+                        top: document.body.scrollHeight,
+                        behavior: 'smooth' // 开启丝滑过渡
+                    });
+                };
+
+                // ★ 新增：安全删除确认与执行逻辑
+                const deleteVersion = async (row) => {
+                    // 1. 弹出危险操作确认框
+                    const result = await Swal.fire({
+                        title: 'Are you sure?',
+                        html: `You are about to permanently delete parsed data for <br><b class="font-mono text-red-600 text-lg mt-2 block">${row.version}</b>`,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#d33',
+                        cancelButtonColor: '#6b7280',
+                        confirmButtonText: 'Yes, delete it!'
+                    });
+
+                    // 2. 用户点击确认后发起请求
+                    if (result.isConfirmed) {
+                        try {
+                            const res = await fetch('/api/delete_history', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    module: currentModule.value, // 发送当前模块名 (包含后缀没关系，后端会切)
+                                    version: row.version
+                                })
+                            });
+                            
+                            const json = await res.json();
+                            if (json.code === 0) {
+                                // 提示成功并刷新图表和表格
+                                Swal.fire({ icon: 'success', title: 'Deleted!', text: 'The data has been removed.', timer: 1500, showConfirmButton: false });
+                                fetchHistory(); 
+                            } else {
+                                Swal.fire({ icon: 'error', title: 'Delete Failed', text: json.error });
+                            }
+                        } catch (e) {
+                            Swal.fire({ icon: 'error', title: 'Network Error', text: e.message });
+                        }
+                    }
+                };
+
+                // ★ 新增初始化应用的方法
+                const initApp = async () => {
+                    try {
+                        const res = await fetch('/api/get_config');
+                        const json = await res.json();
+                        
+                        if (json.code === 0 && json.data.modules && json.data.modules.length > 0) {
+                            // 从配置文件中读取 modules 数组
+                            availableModules.value = json.data.modules;
+                            // 默认选中配置文件中的第一个模块
+                            currentModule.value = availableModules.value[0];
+                        } else {
+                            // 防御性编程：如果配置文件为空，给个保底的默认值
+                            availableModules.value = ['SEC_TOP'];
+                            currentModule.value = 'SEC_TOP';
+                        }
+                        
+                        // ★ 确保拿到了 currentModule 之后，再去抓取历史数据
+                        fetchHistory();
+                        
+                    } catch (e) {
+                        console.error("Failed to load config on startup:", e);
+                        availableModules.value = ['SEC_TOP'];
+                        currentModule.value = 'SEC_TOP';
+                        fetchHistory();
+                    }
+                };
+
+                // 页面加载时执行
+                onMounted(() => {
+                    initApp();
+                });
+
+                const historyData = ref([]);
+                const loading = ref(false);
+                let chartInstance = null;
+
+                const fetchHistory = async () => {
+                    try {
+                        const res = await fetch(`/api/history?module=${currentModule.value}`);
+                        const json = await res.json();
+                        if(json.code === 0) {
+                            historyData.value = json.data;
+                            updateChart();
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        Swal.fire({ icon: 'error', title: 'Oops...', text: 'Cannot connect to backend' });
+                    }
+                };
+
+                const showSettings = ref(false);
+                const configForm = ref({}); // 用于绑定表单的临时对象
+
+                // 2. 打开设置弹窗并拉取配置
+                // 打开设置：直接深拷贝后端返回的真实复杂对象，不再转换成拼凑的字符串
+                const openSettings = async () => {
+                    try {
+                        const res = await fetch('/api/get_config');
+                        const json = await res.json();
+                        if (json.code === 0) {
+                            // 使用 JSON 深拷贝，断开响应式引用，便于用户点击 Cancel 时随时放弃修改
+                            configForm.value = JSON.parse(JSON.stringify(json.data));
+                            showSettings.value = true;
+                        }
+                    } catch (e) {
+                        Swal.fire({ icon: 'error', title: '错误', text: '加载配置文件失败。' });
+                    }
+                };
+
+                // 3. 提交并保存配置
+                const saveSettings = async () => {
+                    try {
+                        const res = await fetch('/api/save_config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(configForm.value)
+                        });
+                        const json = await res.json();
+                        if (json.code === 0) {
+                            showSettings.value = false;
+                            Swal.fire({ icon: 'success', title: '保存成功!', text: '配置已更新并热重载。', timer: 1500, showConfirmButton: false });
+                            fetchHistory(); // 顺便刷新前端主视图
+                        } else {
+                            Swal.fire({ icon: 'error', title: '保存失败', text: json.error });
+                        }
+                    } catch (e) {
+                        Swal.fire({ icon: 'error', title: '网络错误', text: e.message });
+                    }
+                };
+
+                // 交互辅助方法 1：动态向数组追加项
+                const addArrayItem = (key) => {
+                    const inputEl = document.getElementById('new-item-' + key);
+                    if (inputEl && inputEl.value.trim()) {
+                        configForm.value[key].push(inputEl.value.trim());
+                        inputEl.value = ''; // 清空输入框
+                    }
+                };
+
+                // 交互辅助方法 2：动态创建一个全新的空白词典（对象类型）
+                const createNewDictionary = async () => {
+                    const { value: dictName } = await Swal.fire({
+                        title: '新增配置词典分类',
+                        input: 'text',
+                        inputLabel: '请输入新词典的英文 Key 名称（如 custom_parsers）',
+                        inputPlaceholder: '不允许输入空格和特殊字符',
+                        showCancelButton: true,
+                        inputValidator: (value) => {
+                            if (!value || !/^[a-zA-Z0-9_]+$/.test(value)) {
+                                return '请输入合法的英文及下划线标识符！';
+                            }
+                            if (configForm.value[value]) {
+                                return '该配置项已存在！';
+                            }
+                        }
+                    });
+                    
+                    if (dictName) {
+                        // Vue 3 中直接动态赋值对象是具备响应式的
+                        configForm.value[dictName] = {};
+                    }
+                };
+
+                // 交互辅助方法 3：动态在某个词典内新增键值对
+                const addDictionaryPair = (dictKey) => {
+                    const keyEl = document.getElementById('new-k-' + dictKey);
+                    const valEl = document.getElementById('new-v-' + dictKey);
+                    
+                    if (keyEl && valEl && keyEl.value.trim()) {
+                        const k = keyEl.value.trim();
+                        const v = valEl.value.trim();
+                        
+                        // 挂载到对应的字典对象下
+                        configForm.value[dictKey][k] = v;
+                        
+                        // 清空
+                        keyEl.value = '';
+                        valEl.value = '';
+                    }
+                };
+
+                const previewImage = (name, url) => {
+                    Swal.fire({
+                        title: name,
+                        imageUrl: url,
+                        imageAlt: name,
+                        width: '80%',
+                        showConfirmButton: false,
+                        showCloseButton: true
+                    });
+                };
+
+                // 定义所有可控列的状态 (默认全部显示为 true)
+                const tableColumns = ref({
+                    note: { label: '📝 Note', show: true },
+                    stages: { label: '🧾 Stages', show: true },
+                    latencyStd: { label: 'Latency (Full)', show: true },
+                    latencyCls: { label: 'Latency (Cluster)', show: true },
+                    '10.initial': { label: '10 阶段总览', show: true },
+                    '30.place': { label: '30 阶段总览', show: true },
+                    '40.cts': { label: '40 阶段总览', show: true },
+                    '50.route': { label: '50 阶段总览', show: true },
+                    drc: { label: '50 Route DRC', show: true }
+                });
+
+                const saveRowMeta = async (row) => {
+                    try {
+                        const res = await fetch('/api/update_meta', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                module: currentModule.value,
+                                version: row.version,
+                                note: row.note || "",
+                                parent_version: row.parent_version || ""
+                            })
+                        });
+                        const json = await res.json();
+                        if(json.code === 0) {
+                            const Toast = Swal.mixin({ toast: true, position: 'bottom-end', showConfirmButton: false, timer: 1500 });
+                            Toast.fire({ icon: 'success', title: 'Saved' });
+                        }
+                    } catch (e) {
+                        console.error("Save meta error:", e);
+                    }
+                };
+
+                const jumpToVersion = (targetVersion) => {
+                    // 寻找目标行的 DOM 节点
+                    const targetRow = document.getElementById('row-' + targetVersion);
+                    
+                    if (targetRow) {
+                        // 1. 平滑滚动到目标行，使其居中显示
+                        targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        
+                        // 2. 添加亮黄色高亮背景
+                        targetRow.classList.add('bg-yellow-100');
+                        
+                        // 3. 2秒后自动褪去高亮 (利用我们之前加的 transition-colors duration-500)
+                        setTimeout(() => {
+                            targetRow.classList.remove('bg-yellow-100');
+                        }, 2000);
+                    } else {
+                        // 如果当前页面没找到该版本
+                        const Toast = Swal.mixin({ toast: true, position: 'bottom-end', showConfirmButton: false, timer: 2500 });
+                        Toast.fire({ icon: 'warning', title: `Version [${targetVersion}] not found in current view.` });
+                    }
+                };
+
+                const getLatencyList = (latencyData, type) => {
+                    if (!latencyData) return [];
+                    
+                    // 兼容历史老数据：如果旧 JSON 里 latency 直接是一个数组，默认当做 standard 处理
+                    if (Array.isArray(latencyData)) {
+                        return type === 'standard' ? latencyData : [];
+                    }
+                    
+                    // 处理新结构：{ standard: [...], cluster: [...] }
+                    return latencyData[type] || [];
+                };
+
+                const runTrigger = async () => {
+                    if (!currentModule.value) {
+                        Swal.fire({ icon: 'warning', title: 'Oops', text: 'Please select a module first!' });
+                        return;
+                    }
+
+                    loading.value = true;
+                    
+                    // 记录开始时间，用于统计解析耗时
+                    const startTime = Date.now();
+                    
+                    Swal.fire({ 
+                        title: 'Parsing...', 
+                        text: 'Extracting log & report data, please wait...', 
+                        allowOutsideClick: false, 
+                        didOpen: () => { Swal.showLoading() } 
+                    });
+                    
+                    try {
+                        const res = await fetch('/api/run_parse', { 
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ module: currentModule.value }) 
+                        });
+                        
+                        const json = await res.json();
+                        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
+                        if(json.code === 0) {
+                            // ★ 核心体验提升：使用后端返回的动态 msg (例如 "Full parse completed")
+                            Swal.fire({ 
+                                icon: 'success', 
+                                title: 'Parsed Successfully', 
+                                html: `<div>${json.msg}</div><div class="text-xs text-gray-500 mt-2">Time spent: ${duration}s</div>`,
+                                timer: 2500, 
+                                showConfirmButton: false 
+                            });
+                            
+                            // 刷新表格数据
+                            fetchHistory(); 
+                        } else {
+                            // 后端错误统一通过 msg 显示
+                            Swal.fire({ icon: 'error', title: 'Parse Error', text: json.msg || 'Unknown error occurred' });
+                        }
+                    } catch (e) {
+                        Swal.fire({ icon: 'error', title: 'System Error', text: 'Failed to connect to the parser cluster.' });
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                // ★ 终极升级：独立的 Latency 详情弹窗 (不同时钟域加以拆分，独立卡片表格显示)
+                const showLatencyDetails = (version, latencyList, titleType) => {
+                    if (!latencyList || latencyList.length === 0) return;
+
+                    // 1. 核心逻辑：在前端按 domain 家族进行数据清洗与分组
+                    const groups = {};
+                    latencyList.forEach(item => {
+                        // 如果后端有打上 domain 标签则直接用；如果没有（兼容历史旧数据），则用斜杠前缀模糊兜底
+                        const domainKey = item.domain || item.group.split('/')[0].replace(/[0-9]+$/, '');
+                        if (!groups[domainKey]) {
+                            groups[domainKey] = [];
+                        }
+                        groups[domainKey].push(item);
+                    });
+
+                    // 2. 开启外层纵向卡片式容器，允许整体在超过高度时滚动
+                    let htmlContent = `<div class="text-left mt-2 space-y-6 max-h-[65vh] overflow-y-auto pr-2">`;
+
+                    // 3. 循环遍历每个时钟域家族，为其铸造独立的专属卡片和表格
+                    for (const domain in groups) {
+                        const items = groups[domain];
+                        
+                        htmlContent += `
+                        <div class="border border-gray-200 rounded-lg overflow-hidden shadow-sm bg-white">
+                            <div class="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                                <span class="font-bold text-gray-800 text-sm font-mono">
+                                    🌿 Clock Domain: <span class="text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">${domain}</span>
+                                </span>
+                                <span class="text-xs text-gray-500 font-semibold font-mono">共 ${items.length} 个 Skew Group</span>
+                            </div>
+                            
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-300">
+                                    <thead class="bg-gray-100">
+                                        <tr>
+                                            <th class="py-2 pl-4 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Skew Group</th>
+                                            <th class="px-3 py-2 text-center text-xs font-semibold text-gray-600 uppercase border-l border-gray-200 whitespace-nowrap">Min ID</th>
+                                            <th class="px-3 py-2 text-center text-xs font-semibold text-gray-600 uppercase border-l border-gray-200 whitespace-nowrap">Max ID</th>
+                                            <th class="px-3 py-2 text-center text-xs font-semibold text-gray-600 uppercase border-l border-gray-200 whitespace-nowrap">Avg ID</th>
+                                            <th class="px-3 py-2 text-center text-xs font-semibold text-gray-600 uppercase border-l border-gray-200 whitespace-nowrap">Skew Window</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-gray-200 bg-white text-sm">
+                        `;
+
+                        // 渲染当前时钟域下的具体行数据
+                        items.forEach(item => {
+                            htmlContent += `
+                                        <tr class="hover:bg-gray-50 transition-colors">
+                                            <td class="py-2 pl-4 font-mono text-xs font-medium text-gray-800 border-r border-gray-200 whitespace-nowrap">${item.group}</td>
+                                            <td class="px-3 py-2 text-center text-green-600 font-mono border-r border-gray-200 whitespace-nowrap">${item.min}</td>
+                                            <td class="px-3 py-2 text-center text-red-500 font-mono border-r border-gray-200 whitespace-nowrap">${item.max}</td>
+                                            <td class="px-3 py-2 text-center text-blue-600 font-mono whitespace-nowrap">${item.avg}</td>
+                                            <td class="px-3 py-2 text-center text-blue-600 font-mono whitespace-nowrap">${item.skew_w}</td>
+                                        </tr>
+                            `;
+                        });
+
+                        htmlContent += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        `;
+                    }
+
+                    htmlContent += `</div>`;
+
+                    // 4. 唤醒大容量多时钟域看板弹窗
+                    Swal.fire({
+                        title: `<div class="text-xl font-bold border-b pb-3 text-left">⏱️ Latency Domain Separated Details (${titleType}) <span class="font-mono text-base text-blue-600 ml-2">${version}</span></div>`,
+                        html: htmlContent,
+                        width: '880px', // 稍微加宽，给不换行的超长时钟树留出更舒服的视界
+                        showCloseButton: true,
+                        showConfirmButton: false,
+                        customClass: { 
+                            popup: 'rounded-xl shadow-2xl', 
+                            htmlContainer: 'm-0 p-4 bg-gray-50/40' // 淡淡的底色将独立白色表格卡片衬托得更加立体高级
+                        }
+                    });
+                };
+
+                // ★ 新增：从多个时钟域中挑出 "最长" (Max ID 最大) 的代表
+                const getWorstLatencyItem = (latencyList) => {
+                    if (!latencyList || latencyList.length === 0) return null;
+                    return latencyList.reduce((prev, curr) => {
+                        const prevMax = parseFloat(prev.max) || 0;
+                        const currMax = parseFloat(curr.max) || 0;
+                        // 比较两者的 max 值，留下更大的那个
+                        return (currMax > prevMax) ? curr : prev;
+                    });
+                };
+
+                // ★ 升级：按时钟域 (domain) 分组，并在每个组里挑出 Max ID 最大的代表
+                const getWorstPerDomain = (latencyList) => {
+                    if (!latencyList || latencyList.length === 0) return [];
+                    
+                    // 1. 按 domain 家族分组
+                    const groups = {};
+                    latencyList.forEach(item => {
+                        // 如果后端没传 domain (兼容老数据)，就用字符串前缀做一个模糊回退兜底
+                        const domainKey = item.domain || item.group.split('/')[0].replace(/[0-9]+$/, '');
+                        if (!groups[domainKey]) {
+                            groups[domainKey] = [];
+                        }
+                        groups[domainKey].push(item);
+                    });
+                    
+                    // 2. 遍历每个组，挑出 Max 值最大的
+                    const worstItems = [];
+                    for (const key in groups) {
+                        const list = groups[key];
+                        const worst = list.reduce((prev, curr) => {
+                            const prevMax = parseFloat(prev.max) || 0;
+                            const currMax = parseFloat(curr.max) || 0;
+                            return (currMax > prevMax) ? curr : prev;
+                        });
+                        worstItems.push(worst);
+                    }
+                    
+                    // 返回一个包含了各家族最差代表的数组
+                    return worstItems;
+                };
+
+                const showDetails = (row) => {
+                    if (!row.timing || Object.keys(row.timing).length === 0) {
+                        Swal.fire({ icon: 'info', title: 'No Data', text: 'No timing data available for this version.', confirmButtonColor: '#0052cc' });
+                        return;
+                    }
+
+                    let htmlContent = `<div class="text-left mt-2 space-y-6 max-h-[65vh] overflow-y-auto pr-2">`;
+                    const orderedStages = ['10.initial', '30.place', '40.cts', '50.route'];
+                    
+                    orderedStages.forEach(stage => {
+                        const t = row.timing[stage];
+                        if (!t) return;
+
+                        // --- ★ 核心修改：把新造的 reg2reg_summary 加入黑名单，不让它在详情弹窗里显示 ---
+                        const excludeKeys = ['density', 'congestion', 'images', 'abs_dir_path', 'rel_dir_path', 'reg2reg_summary'];
+                        
+                        // 1. 获取所有有效的 group 名 (现在只会抓到最原始的 reg2reg, reg2reg_aa 等)
+                        const groups = Object.keys(t).filter(key => !excludeKeys.includes(key));
+                        
+                        // 2. 按照 WNS 数值从小到大排序 (负值越小，即越严重的违例，排得越靠前)
+                        groups.sort((a, b) => {
+                            const wnsA = parseFloat(t[a].wns) || 0;
+                            const wnsB = parseFloat(t[b].wns) || 0;
+                            return wnsA - wnsB;
+                        });
+                        // ----------------------------------
+
+                        htmlContent += `
+                        <div class="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                            <div class="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                                <span class="font-bold text-gray-800 text-base">
+                                    Stage: <span class="text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">${stage}</span>
+                                </span>
+                                <div class="text-xs text-gray-600 flex gap-4">
+                                    <span><b>Density:</b> <span class="font-mono text-blue-600">${t.density || 'N/A'}</span></span>
+                                    <span><b>Congestion:</b> <span class="font-mono text-blue-600">${t.congestion || 'N/A'}</span></span>
+                                </div>
+                            </div>
+                            <table class="min-w-full divide-y divide-gray-300">
+                                <thead class="bg-white">
+                                    <tr>
+                                        <th class="py-2 pl-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Group Name</th>
+                                        <th class="px-3 py-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider border-l border-gray-200">WNS</th>
+                                        <th class="px-3 py-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider border-l border-gray-200">TNS</th>
+                                        <th class="px-3 py-2 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider border-l border-gray-200">NVP</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200 bg-white">
+                        `;
+
+                        // --- ★ 循环排序后的 groups ---
+                        groups.forEach(group => {
+                            const wnsVal = parseFloat(t[group].wns);
+                            const wnsClass = wnsVal < 0 ? 'text-red-600 font-bold bg-red-50' : 'text-green-600 font-bold';
+                            
+                            htmlContent += `
+                                <tr class="hover:bg-gray-50 transition-colors">
+                                    <td class="whitespace-nowrap py-1.5 pl-4 text-sm font-semibold text-gray-800 border-r border-gray-200">${group}</td>
+                                    <td class="whitespace-nowrap px-3 py-1.5 text-sm font-mono text-center border-r border-gray-200 ${wnsClass}">${t[group].wns}</td>
+                                    <td class="whitespace-nowrap px-3 py-1.5 text-sm font-mono text-center text-gray-600 border-r border-gray-200">${t[group].tns}</td>
+                                    <td class="whitespace-nowrap px-3 py-1.5 text-sm font-mono text-center text-gray-600">${t[group].nvp}</td>
+                                </tr>
+                            `;
+                        });
+
+                        htmlContent += `</tbody></table></div>`;
+                    });
+
+                    htmlContent += `</div>`;
+
+                    Swal.fire({
+                        title: `<div class="text-xl font-bold text-gray-800 text-left border-b border-gray-200 pb-3">⏱️ Multi-Stage Timing Details <span class="text-blue-600 text-base font-mono ml-2 block sm:inline mt-1 sm:mt-0">${row.version}</span></div>`,
+                        html: htmlContent,
+                        width: '850px',
+                        showCloseButton: true,
+                        showConfirmButton: false,
+                        customClass: { popup: 'rounded-xl shadow-2xl', htmlContainer: 'm-0 p-4' }
+                    });
+                };
+
+                const showVTDetails = (row) => {
+                    let htmlContent = '';
+                    const stages = ['10.initial', '30.place', '40.cts', '50.route'];
+
+                    stages.forEach(stage => {
+                        if (row.cellusage && row.cellusage[stage]) {
+                            htmlContent += `<h4 class="text-left font-bold text-indigo-800 bg-indigo-100 p-2 mt-3 rounded-t-md border-b border-indigo-200">🔋 Stage: ${stage} (Cell / VT Usage)</h4>`;
+                            htmlContent += `
+                                <table class="min-w-full divide-y divide-gray-200 border border-gray-200 mb-4">
+                                    <thead class="bg-indigo-50">
+                                        <tr>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-indigo-800 border-r border-gray-200">VT Type</th>
+                                            <th class="px-4 py-2 text-right text-xs font-medium text-indigo-800 border-r border-gray-200">Count</th>
+                                            <th class="px-4 py-2 text-right text-xs font-medium text-indigo-800 border-r border-gray-200">Count %</th>
+                                            <th class="px-4 py-2 text-right text-xs font-medium text-indigo-800 border-r border-gray-200">Area (um²)</th>
+                                            <th class="px-4 py-2 text-right text-xs font-medium text-indigo-800">Area %</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">
+                            `;
+
+                            const vtData = row.cellusage[stage];
+                            for (const vtName in vtData) {
+                                const item = vtData[vtName];
+                                const isTotal = vtName === 'total';
+                                const rowClass = isTotal ? 'bg-gray-100 font-bold' : 'hover:bg-indigo-50';
+                                
+                                htmlContent += `
+                                    <tr class="${rowClass} transition-colors">
+                                        <td class="whitespace-nowrap px-4 py-1.5 text-sm font-semibold text-gray-800 border-r border-gray-200">${vtName}</td>
+                                        <td class="whitespace-nowrap px-4 py-1.5 text-sm font-mono text-right text-gray-600 border-r border-gray-200">${item.count}</td>
+                                        <td class="whitespace-nowrap px-4 py-1.5 text-sm font-mono text-right text-indigo-600 border-r border-gray-200">${item.count_perc}%</td>
+                                        <td class="whitespace-nowrap px-4 py-1.5 text-sm font-mono text-right text-gray-600 border-r border-gray-200">${item.area}</td>
+                                        <td class="whitespace-nowrap px-4 py-1.5 text-sm font-mono text-right text-emerald-600">${item.area_perc}%</td>
+                                    </tr>
+                                `;
+                            }
+                            htmlContent += `</tbody></table>`;
+                        }
+                    });
+
+                    if (!htmlContent) {
+                        htmlContent = `<div class="text-gray-500 py-4 text-center italic">No VT usage data found for this version.</div>`;
+                    }
+
+                    Swal.fire({
+                        title: `<div class="text-xl font-bold border-b pb-2 text-indigo-800">🔋 Cell / VT Usage: <span class="font-mono text-lg text-indigo-600">${row.version}</span></div>`,
+                        html: `<div class="max-h-[70vh] overflow-y-auto px-2">${htmlContent}</div>`,
+                        width: '800px',
+                        confirmButtonColor: '#4f46e5' // 对应 Tailwind 的 indigo-600
+                    });
+                };
+
+                const updateChart = async () => {
+                    await nextTick();
+                    const chartDiv = document.getElementById('chart');
+                    if(!chartDiv) return;
+                    
+                    // 如果你之前加了动态宽度计算，可以保留。这里使用默认初始化
+                    if(!chartInstance) chartInstance = echarts.init(chartDiv);
+                    
+                    // 1. 提取 X 轴 (Version)
+                    const xAxisData = historyData.value.map(r => r.version.length > 12 ? r.version.substring(0, 12) + '...' : r.version);
+                    
+                    // 2. 分别提取 30, 40, 50 阶段的 Reg2Reg TNS 
+                    // 使用 try-catch 防止某个版本由于刚起步还未生成对应阶段数据而导致报错
+                    const tns10Data = historyData.value.map(r => { try { return parseFloat(r.timing['10.initial'].reg2reg.tns); } catch { return null; } });
+                    const tns30Data = historyData.value.map(r => { try { return parseFloat(r.timing['30.place'].reg2reg.tns); } catch { return null; } });
+                    const tns40Data = historyData.value.map(r => { try { return parseFloat(r.timing['40.cts'].reg2reg.tns); } catch { return null; } });
+                    const tns50Data = historyData.value.map(r => { try { return parseFloat(r.timing['50.route'].reg2reg.tns); } catch { return null; } });
+                    
+                    // 3. 提取 50 阶段的 DRC 数据 (这里以 eco_drc_max 为例，如果是总数可自行修改为 eco_drc_max + ...)
+                    const drcData = historyData.value.map(r => { try { return parseInt(r.drc['50'].eco_drc_max); } catch { return null; } });
+
+                    const option = {
+                        tooltip: { trigger: 'axis' },
+                        legend: { 
+                            data: ['10.initial TNS', '30.place TNS', '40.cts TNS', '50.route TNS', '50 Route DRC'], 
+                            textStyle: { color: '#172b4d' } 
+                        },
+                        xAxis: { 
+                            type: 'category', 
+                            data: xAxisData, 
+                            axisLabel: { color: '#5e6c84', rotate: 15 } 
+                        },
+                        yAxis: [
+                            { 
+                                type: 'value', 
+                                name: 'TNS (ns)', 
+                                position: 'left', 
+                                axisLabel: { color: '#5e6c84' }, 
+                                splitLine: { lineStyle: { color: '#ebecf0' } } 
+                            },
+                            { 
+                                type: 'value', 
+                                name: 'DRC', 
+                                position: 'right', 
+                                axisLabel: { color: '#5e6c84' }, 
+                                splitLine: { show: false } 
+                            }
+                        ],
+                        series: [
+                            { name: '10.initial TNS', type: 'line', data: tns10Data, yAxisIndex: 0, smooth: true, itemStyle: { color: '#8777D9' }, lineStyle: { width: 3, type: 'dashed' } },
+                            // 30阶段 - 橙色
+                            { name: '30.place TNS', type: 'line', data: tns30Data, yAxisIndex: 0, smooth: true, itemStyle: { color: '#ff991f' }, lineStyle: { width: 3 } },
+                            // 40阶段 - 青色
+                            { name: '40.cts TNS', type: 'line', data: tns40Data, yAxisIndex: 0, smooth: true, itemStyle: { color: '#00b8d9' }, lineStyle: { width: 3 } },
+                            // 50阶段 - 深蓝
+                            { name: '50.route TNS', type: 'line', data: tns50Data, yAxisIndex: 0, smooth: true, itemStyle: { color: '#0052cc' }, lineStyle: { width: 3 } },
+                            // DRC条形图 - 红色
+                            { name: '50 Route DRC', type: 'bar', data: drcData, yAxisIndex: 1, itemStyle: { color: '#de350b' }, barMaxWidth: 40 }
+                        ]
+                    };
+                    
+                    // 第二个参数 true 表示重新绘制图表（覆盖旧数据结构），防止与之前的 WNS 图例重叠
+                    chartInstance.setOption(option, true); 
+                };
+
+                onMounted(() => { fetchHistory(); });
+
+                return { 
+                  currentModule, historyData, loading, 
+                  fetchHistory, runTrigger, showDetails, showVTDetails, showLatencyDetails, getWorstLatencyItem, getLatencyList,getWorstPerDomain, 
+                  saveRowMeta, previewImage, tableColumns, jumpToVersion,
+                  showSettings, configForm, openSettings, saveSettings,
+                  addArrayItem, createNewDictionary, addDictionaryPair,
+                  currentModule,availableModules,
+                  scrollToTop, scrollToBottom, deleteVersion
+                  //getImgUrl 
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
